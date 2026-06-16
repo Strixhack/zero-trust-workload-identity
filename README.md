@@ -3,6 +3,8 @@
 
 > **Thesis claim:** Trust domain naming is the structurally dominant failure surface in SPIFFE/SPIRE deployments — not cryptography. Naming errors are silent, non-self-healing, and unaddressed by NIST SP 800-207A.
 
+![Happy Path Demo](https://raw.githubusercontent.com/Strixhack/zero-trust-workload-identity/main/Screenshots/Screenshot%202026-06-16%20102433.png)
+
 ---
 
 ## What This Project Is
@@ -37,7 +39,33 @@ The demo environment runs four Docker containers: a SPIFFE CA, Service A, Servic
 | **S2: Rotation Gap** | CA stopped mid-TTL | Service calls fail as certificates expire |
 | **S3: Sidecar Bypass** | Direct HTTP, no sidecar | HTTP 200 returned, `caller_identity` is `null` |
 
-Scenario 3 is the thesis in action: **the attacker's success is invisible to the application layer.** Status code alone is insufficient for security auditing in a SPIFFE environment.
+### S1 — Happy Path
+SPIFFE CA issues real X.509 SVIDs. Service A calls Service B over mTLS. Every request logs a verified `caller_identity`.
+
+![Happy Path](https://raw.githubusercontent.com/Strixhack/zero-trust-workload-identity/main/Screenshots/Screenshot%202026-06-16%20102433.png)
+
+### S2 — Rotation Gap Attack
+The CA is stopped mid-TTL. SVIDs can no longer be rotated. When TTL expires, all mTLS calls fail — a timed denial of service with no application-layer warning.
+
+![Rotation Gap](https://raw.githubusercontent.com/Strixhack/zero-trust-workload-identity/main/Screenshots/Screenshot%202026-06-16%20102455.png)
+
+![Rotation Gap Terminal](https://raw.githubusercontent.com/Strixhack/zero-trust-workload-identity/main/Screenshots/Screenshot%202026-06-16%20102600.png)
+
+The terminal output shows `CERTIFICATE_VERIFY_FAILED` — the exact moment TTL expiry converts a CA outage into a full service outage.
+
+![Rotation Gap Live](https://raw.githubusercontent.com/Strixhack/zero-trust-workload-identity/main/Screenshots/Screenshot%202026-06-16%20102705.png)
+
+### S3 — Sidecar Bypass Attack
+Service B is called directly over plain HTTP, bypassing the mTLS sidecar entirely. The service responds with HTTP 200. The `caller_identity` field is `null`. **No error is produced. The attack is invisible.**
+
+![Sidecar Bypass](https://raw.githubusercontent.com/Strixhack/zero-trust-workload-identity/main/Screenshots/Screenshot%202026-06-16%20102519.png)
+
+This is the thesis in a single screenshot: a green 200 OK next to a null identity. Status code alone is insufficient for security auditing in a SPIFFE environment.
+
+### SVID Inspector
+Live X.509 certificate inspection — real SPIFFE URI in the SAN field, real TTL countdown, real cert PEM. No mocks.
+
+![SVID Inspector](https://raw.githubusercontent.com/Strixhack/zero-trust-workload-identity/main/Screenshots/Screenshot%202026-06-16%20102538.png)
 
 ---
 
@@ -60,12 +88,12 @@ Scenario 3 is the thesis in action: **the attacker's success is invisible to the
 ### Prerequisites
 
 - Docker and Docker Compose installed
-- Ports 7000 free on localhost
+- Port 7000 free on localhost
 
 ### Start the environment
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/zero-trust-workload-identity
+git clone https://github.com/Strixhack/zero-trust-workload-identity
 cd zero-trust-workload-identity/demo
 docker compose up --build
 ```
@@ -94,6 +122,7 @@ docker exec service_a python client.py --mode bypass
 ```
 zero-trust-workload-identity/
 ├── README.md
+├── Screenshots/                         # Live demo screenshots
 ├── docs/
 │   ├── ZeroTrust_ThesisLevel.pptx      # 25-slide main presentation
 │   └── ZeroTrust_Demo_Walkthrough.pptx # 10-slide live demo guide
@@ -123,8 +152,6 @@ The `/research-notes` folder contains standalone writeups that go deeper than th
 
 ## Key Concepts
 
-If you're new to this space, these are the terms that matter:
-
 | Term | Plain English |
 |---|---|
 | **SPIFFE ID** | A URI that uniquely identifies a workload: `spiffe://trust-domain/service-name` |
@@ -138,8 +165,6 @@ If you're new to this space, these are the terms that matter:
 ---
 
 ## What I Learned (SOC Relevance)
-
-This project sharpened several capabilities directly applicable to security operations:
 
 **Threat modelling under incomplete information.** Applying STRIDE to SPIFFE/SPIRE required reasoning about attacker capability models where the attacker may be an operator making a configuration error, not an external adversary.
 
@@ -185,4 +210,4 @@ The simulation environment was built from scratch using Python's `cryptography` 
 
 ---
 
-*Built by Kundan, Rutuj, and Siddhartha as part of master's-level security research.*
+*Built by Kundan & Rutuj as part of master's-level security research.*
