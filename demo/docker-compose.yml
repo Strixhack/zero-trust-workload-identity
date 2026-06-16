@@ -1,0 +1,68 @@
+version: "3.9"
+
+services:
+
+  spiffe_ca:
+    build: ./spiffe_ca
+    container_name: spiffe_ca
+    networks:
+      - spiffe_net
+    volumes:
+      - ca_certs:/certs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; assert os.path.exists('/certs/ca.crt')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  service_a:
+    build: ./service_a
+    container_name: service_a
+    networks:
+      - spiffe_net
+    volumes:
+      - ca_certs:/certs:ro
+    depends_on:
+      spiffe_ca:
+        condition: service_healthy
+    environment:
+      - SPIFFE_ID=spiffe://prod.example.org/service-a
+      - CA_CERT=/certs/ca.crt
+      - SERVICE_B_URL=https://service_b:8443
+
+  service_b:
+    build: ./service_b
+    container_name: service_b
+    networks:
+      - spiffe_net
+    volumes:
+      - ca_certs:/certs:ro
+    depends_on:
+      spiffe_ca:
+        condition: service_healthy
+    environment:
+      - SPIFFE_ID=spiffe://prod.example.org/service-b
+      - CA_CERT=/certs/ca.crt
+    ports:
+      - "8443:8443"
+
+  dashboard:
+    build: ./dashboard
+    container_name: dashboard
+    networks:
+      - spiffe_net
+    depends_on:
+      - service_a
+      - service_b
+    ports:
+      - "7000:7000"
+    environment:
+      - SERVICE_A_URL=http://service_a:8080
+      - SERVICE_B_URL=http://service_b:8080
+
+networks:
+  spiffe_net:
+    driver: bridge
+
+volumes:
+  ca_certs:
