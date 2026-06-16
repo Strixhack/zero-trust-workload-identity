@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zero Trust Demo — SPIFFE/SPIRE</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2128;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #7d8590;
+    --green: #3fb950;
+    --red: #f85149;
+    --yellow: #d29922;
+    --blue: #58a6ff;
+    --cyan: #39d353;
+    --accent: #1f6feb;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; }
+
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-icon { width: 32px; height: 32px; background: var(--accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+  .logo-text h1 { font-size: 16px; font-weight: 600; }
+  .logo-text p { font-size: 11px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
+  .status-bar { display: flex; gap: 16px; align-items: center; }
+  .status-pill { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+  .dot.red { background: var(--red); animation: none; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  nav { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; gap: 4px; }
+  .tab { padding: 12px 16px; cursor: pointer; font-size: 13px; color: var(--muted); border-bottom: 2px solid transparent; transition: all 0.15s; white-space: nowrap; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+  main { padding: 24px; max-width: 1400px; margin: 0 auto; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .scenario-header { margin-bottom: 20px; }
+  .scenario-header h2 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .scenario-header p { color: var(--muted); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .card-title { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+
+  /* Flow diagram */
+  .flow { display: flex; align-items: center; gap: 0; margin-bottom: 20px; }
+  .flow-node { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; text-align: center; flex: 1; }
+  .flow-node.active { border-color: var(--green); box-shadow: 0 0 0 1px var(--green)20; }
+  .flow-node.error { border-color: var(--red); }
+  .flow-node-icon { font-size: 24px; margin-bottom: 6px; }
+  .flow-node-name { font-size: 13px; font-weight: 600; }
+  .flow-node-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .flow-arrow { color: var(--green); font-size: 18px; padding: 0 8px; flex-shrink: 0; }
+  .flow-arrow-label { font-size: 10px; color: var(--muted); display: block; text-align: center; }
+
+  /* Request log table */
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; padding: 8px 12px; color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--border)40; font-family: 'Consolas', monospace; }
+  tr:hover td { background: var(--surface2); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .badge-ok { background: var(--green)20; color: var(--green); }
+  .badge-bypass { background: var(--red)20; color: var(--red); }
+  .identity-ok { color: var(--blue); }
+  .identity-null { color: var(--red); font-style: italic; }
+
+  /* Activity stream */
+  .stream { font-family: 'Consolas', monospace; font-size: 12px; line-height: 1.6; color: var(--muted); max-height: 200px; overflow-y: auto; }
+  .stream-entry { display: flex; gap: 8px; }
+  .stream-time { color: var(--muted); flex-shrink: 0; }
+  .stream-ok { color: var(--green); }
+  .stream-err { color: var(--red); }
+  .stream-warn { color: var(--yellow); }
+
+  /* Buttons */
+  .btn { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; transition: opacity 0.15s; }
+  .btn:hover { opacity: 0.8; }
+  .btn-red { background: var(--red); color: white; }
+  .btn-green { background: var(--green); color: #0d1117; }
+  .btn-blue { background: var(--accent); color: white; }
+  .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .btn-group { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+
+  /* Steps */
+  .steps { display: flex; flex-direction: column; gap: 8px; }
+  .step { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px; display: flex; align-items: flex-start; gap: 12px; }
+  .step.active { border-color: var(--blue); }
+  .step.done { border-color: var(--green); }
+  .step.current { border-color: var(--yellow); }
+  .step-num { width: 24px; height: 24px; border-radius: 50%; background: var(--border); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+  .step.done .step-num { background: var(--green); color: #0d1117; }
+  .step.current .step-num { background: var(--yellow); color: #0d1117; }
+  .step-title { font-weight: 600; font-size: 13px; }
+  .step-desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  /* SVID inspector */
+  .field-group { margin-bottom: 12px; }
+  .field-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+  .field-value { background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 8px 10px; font-family: 'Consolas', monospace; font-size: 12px; word-break: break-all; }
+  .field-value.highlight { border-color: var(--blue); color: var(--blue); }
+
+  .ttl-bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+  .ttl-fill { height: 100%; background: var(--green); border-radius: 2px; transition: width 1s linear; }
+  .ttl-fill.warning { background: var(--yellow); }
+  .ttl-fill.critical { background: var(--red); }
+
+  .cert-pem { font-family: 'Consolas', monospace; font-size: 10px; color: var(--muted); background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 10px; max-height: 120px; overflow-y: auto; word-break: break-all; line-height: 1.4; }
+
+  /* Key insight box */
+  .insight { background: var(--surface2); border: 1px solid var(--border); border-left: 3px solid var(--green); border-radius: 0 6px 6px 0; padding: 10px 14px; margin-top: 12px; font-size: 12px; line-height: 1.6; }
+  .insight .ins-row { display: flex; gap: 8px; align-items: flex-start; }
+  .insight .ins-label { color: var(--muted); flex-shrink: 0; }
+
+  /* Attack sim */
+  .attack-step { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 12px; }
+  .attack-step.success { border-color: var(--green); }
+  .attack-step.danger { border-color: var(--red); }
+  .attack-step.result { border-color: var(--red); background: var(--red)08; }
+  .attack-num { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+  .attack-step.success .attack-num { background: var(--green); color: #0d1117; }
+  .attack-step.danger .attack-num { background: var(--red); color: white; }
+  .attack-step.result .attack-num { background: var(--red); color: white; }
+
+  .json-output { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 14px; font-family: 'Consolas', monospace; font-size: 12px; line-height: 1.6; color: var(--text); }
+  .json-key { color: var(--muted); }
+  .json-str { color: var(--green); }
+  .json-null { color: var(--red); font-weight: 700; }
+  .json-bool-false { color: var(--red); }
+  .json-warn { color: var(--yellow); }
+
+  .section-divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🛡</div>
+    <div class="logo-text">
+      <h1>Zero Trust Demo</h1>
+      <p>SPIFFE · SPIRE · Workload Identity</p>
+    </div>
+  </div>
+  <div class="status-bar">
+    <div class="status-pill"><div class="dot" id="dot-ca"></div><span id="lbl-ca">SPIFFE CA</span></div>
+    <div class="status-pill"><div class="dot" id="dot-b"></div><span id="lbl-b">SERVICE B</span></div>
+    <div class="status-pill"><div class="dot" style="background:var(--cyan)"></div>LIVE</div>
+  </div>
+</header>
+
+<nav>
+  <div class="tab active" onclick="showTab('happy')">01 — Happy Path</div>
+  <div class="tab" onclick="showTab('rotation')">02 — Rotation Gap</div>
+  <div class="tab" onclick="showTab('bypass')">03 — Sidecar Bypass</div>
+  <div class="tab" onclick="showTab('inspector')">🔍 SVID Inspector</div>
+</nav>
+
+<main>
+
+<!-- PANEL 1: HAPPY PATH -->
+<div class="panel active" id="panel-happy">
+  <div class="scenario-header">
+    <h2>Scenario 1 — Happy Path</h2>
+    <p>SPIRE Lifecycle · SVID Issuance · mTLS Verified Identity</p>
+  </div>
+
+  <div class="flow" id="flow-happy">
+    <div class="flow-node active">
+      <div class="flow-node-icon">🏛</div>
+      <div class="flow-node-name">SPIFFE CA</div>
+      <div class="flow-node-sub">Issuing SVIDs</div>
+    </div>
+    <div class="flow-arrow"><span class="flow-arrow-label">SVID</span>→</div>
+    <div class="flow-node active">
+      <div class="flow-node-icon">📦</div>
+      <div class="flow-node-name">Service A</div>
+      <div class="flow-node-sub" id="flow-a-id">spiffe://demo.spiffe.io/service-a</div>
+    </div>
+    <div class="flow-arrow"><span class="flow-arrow-label">mTLS</span>→</div>
+    <div class="flow-node active">
+      <div class="flow-node-icon">🗄</div>
+      <div class="flow-node-name">Service B</div>
+      <div class="flow-node-sub">Verifies identity</div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-title">▌ Live Request Log</div>
+      <table>
+        <thead><tr><th>Time</th><th>Status</th><th>Caller Identity</th><th>Port</th></tr></thead>
+        <tbody id="log-table"></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-title">▌ Activity Stream</div>
+      <div class="stream" id="activity-stream">
+        <div class="stream-entry"><span class="stream-time">--:--:-- UTC</span><span>Connecting to services...</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PANEL 2: ROTATION GAP -->
+<div class="panel" id="panel-rotation">
+  <div class="scenario-header">
+    <h2>Scenario 2 — Rotation Gap Attack</h2>
+    <p>Kill the CA · Watch SVID Expire · Observe Failure · Recover</p>
+  </div>
+
+  <div class="btn-group">
+    <button class="btn btn-red" onclick="stopCA()">⏹ Stop SPIFFE CA</button>
+    <button class="btn btn-green" onclick="startCA()">▶ Start SPIFFE CA</button>
+    <button class="btn btn-outline" onclick="checkCAStatus()">↻ Check Status</button>
+  </div>
+
+  <div class="grid2">
+    <div>
+      <div class="card-title" style="margin-bottom:12px">▌ Scenario Steps</div>
+      <div class="steps">
+        <div class="step done" id="step1">
+          <div class="step-num">✓</div>
+          <div><div class="step-title">Services Running</div><div class="step-desc">Service A is calling Service B every 10 seconds using its SVID.</div></div>
+        </div>
+        <div class="step" id="step2">
+          <div class="step-num">2</div>
+          <div><div class="step-title">Kill the CA</div><div class="step-desc">Click "Stop SPIFFE CA" above. SVIDs can no longer be rotated.</div></div>
+        </div>
+        <div class="step" id="step3">
+          <div class="step-num">3</div>
+          <div><div class="step-title">Wait for TTL to Expire</div><div class="step-desc">SVID TTL is 2 minutes. Watch Service A log for certificate expired errors.</div></div>
+        </div>
+        <div class="step" id="step4">
+          <div class="step-num">4</div>
+          <div><div class="step-title">Observe Failure</div><div class="step-desc">All mTLS calls fail. No connectivity. No identity. Total outage.</div></div>
+        </div>
+        <div class="step" id="step5">
+          <div class="step-num">5</div>
+          <div><div class="step-title">Recovery</div><div class="step-desc">Click "Start SPIFFE CA". Auto-rotation restores service.</div></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title">▌ CA Status &amp; Service Log</div>
+        <div class="field-label">CA Health</div>
+        <div class="field-value" id="ca-health-display" style="margin-bottom:12px">Checking...</div>
+        <div class="field-label">Run in your terminal</div>
+        <div class="field-value" style="font-size:11px;line-height:1.8">
+          # Kill CA<br>
+          <span style="color:var(--cyan)">docker stop spiffe-ca</span><br><br>
+          # Watch failure<br>
+          <span style="color:var(--cyan)">docker logs service-a -f</span><br><br>
+          # Recover<br>
+          <span style="color:var(--cyan)">docker start spiffe-ca</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">▌ Live Activity</div>
+        <div class="stream" id="rotation-stream">
+          <div class="stream-entry"><span>Waiting...</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PANEL 3: SIDECAR BYPASS -->
+<div class="panel" id="panel-bypass">
+  <div class="scenario-header">
+    <h2>Scenario 3 — Sidecar Bypass Attack</h2>
+    <p>Bypass mTLS Entirely · No Identity · Silent Attack</p>
+  </div>
+
+  <div class="grid2">
+    <div>
+      <div class="card-title" style="margin-bottom:12px">▌ Attack Simulation</div>
+      <div class="attack-step success">
+        <div class="attack-num">✓</div>
+        <div><div class="step-title">Normal mTLS Call</div><div class="step-desc">Service A presents SPIFFE ID. Service B verifies. Identity logged.</div></div>
+      </div>
+      <div class="attack-step danger">
+        <div class="attack-num">2</div>
+        <div><div class="step-title">Bypass Attack</div><div class="step-desc">Call Service B on plain HTTP port — no cert, no identity, no rejection.</div></div>
+      </div>
+      <div class="attack-step result">
+        <div class="attack-num">3</div>
+        <div><div class="step-title">Result</div><div class="step-desc">200 OK returned but caller_identity is null. Attack invisible.</div></div>
+      </div>
+
+      <div style="margin-top:16px">
+        <button class="btn btn-blue" onclick="launchBypass()" style="width:100%;padding:12px">⚡ Launch Bypass Attack</button>
+      </div>
+
+      <div class="card-title" style="margin: 16px 0 8px">▌ Attack Response</div>
+      <div class="json-output" id="bypass-response">
+        <span class="json-key">// Click "Launch Bypass Attack" to run</span>
+      </div>
+    </div>
+
+    <div>
+      <div class="card-title" style="margin-bottom:12px">▌ Request Log — Spot the Difference</div>
+      <table>
+        <thead><tr><th>Time</th><th>Status</th><th>Caller Identity</th><th>Port</th></tr></thead>
+        <tbody id="bypass-log-table"></tbody>
+      </table>
+
+      <div class="insight" style="margin-top:16px; border-left-color: var(--red)">
+        <div class="card-title" style="margin-bottom:8px">▌ Key Insight</div>
+        <div class="ins-row"><span class="ins-label stream-ok">✅</span><span>mTLS call: caller_identity = spiffe://...</span></div>
+        <div class="ins-row"><span class="ins-label stream-err">🚨</span><span>Bypass call: caller_identity = null</span></div>
+        <div style="margin-top:8px; color:var(--red); font-weight:600">No error. No alert. Attacker is in.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PANEL 4: SVID INSPECTOR -->
+<div class="panel" id="panel-inspector">
+  <div class="scenario-header">
+    <h2>SVID Inspector</h2>
+    <p>Inspect a live X.509 SVID — real cert, real SPIFFE ID in SAN URI</p>
+  </div>
+
+  <div style="margin-bottom:16px;display:flex;gap:8px">
+    <button class="btn btn-blue" onclick="loadSVID('a')">⊕ Issue &amp; Inspect Live SVID</button>
+    <button class="btn btn-outline" onclick="loadEntries()">▦ Show Registered Entries</button>
+  </div>
+
+  <div class="grid2">
+    <div>
+      <div class="card">
+        <div class="card-title">▌ SVID Fields</div>
+        <div class="field-group">
+          <div class="field-label">SPIFFE ID (SAN URI)</div>
+          <div class="field-value highlight" id="insp-spiffe-id">—</div>
+        </div>
+        <div class="field-group">
+          <div class="field-label">Trust Domain</div>
+          <div class="field-value" id="insp-trust-domain">—</div>
+        </div>
+        <div class="field-group">
+          <div class="field-label">Not Before</div>
+          <div class="field-value" id="insp-not-before">—</div>
+        </div>
+        <div class="field-group">
+          <div class="field-label">Not After (Expiry)</div>
+          <div class="field-value" id="insp-not-after">—</div>
+        </div>
+        <div class="field-group">
+          <div class="field-label">Key Usage</div>
+          <div class="field-value">Digital Signature, Key Encipherment</div>
+        </div>
+        <div class="field-group">
+          <div class="field-label">Extended Key Usage</div>
+          <div class="field-value">TLS Web Server Auth + Client Auth</div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title">▌ TTL &amp; Validity</div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span>TTL Remaining</span>
+          <span id="ttl-label" style="font-family:monospace">—</span>
+        </div>
+        <div class="ttl-bar"><div class="ttl-fill" id="ttl-fill" style="width:100%"></div></div>
+        <div class="field-value" style="margin-top:10px;font-size:11px">
+          Auto-rotation at TTL/2 — Agent re-fetches at 60s — workload never handles key management
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">▌ Certificate PEM</div>
+        <div class="cert-pem" id="insp-cert-pem">Click "Issue &amp; Inspect Live SVID" to load</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-title">▌ Registered Workload Entries</div>
+    <table>
+      <thead><tr><th>SPIFFE ID</th><th>Selector</th><th>TTL</th></tr></thead>
+      <tbody id="entries-table"></tbody>
+    </table>
+  </div>
+</div>
+
+</main>
+
+<script>
+let currentTab = 'happy';
+let logData = [];
+let caHealthy = true;
+let inspTTL = 0;
+let inspTTLMax = 120;
+
+function showTab(tab) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('panel-' + tab).classList.add('active');
+  event.target.classList.add('active');
+  currentTab = tab;
+}
+
+function fmt(identity) {
+  if (!identity) return '<span class="identity-null">NO IDENTITY</span>';
+  return `<span class="identity-ok">${identity}</span>`;
+}
+
+function renderLog(data, tableId) {
+  const tbody = document.getElementById(tableId);
+  if (!tbody) return;
+  tbody.innerHTML = data.slice(0, 12).map(r => `
+    <tr>
+      <td>${r.time}</td>
+      <td><span class="badge ${r.status === 'BYPASS' ? 'badge-bypass' : 'badge-ok'}">${r.status}</span></td>
+      <td>${fmt(r.caller_identity)}</td>
+      <td>${r.port}</td>
+    </tr>
+  `).join('');
+}
+
+function addActivity(msg, type='ok') {
+  const stream = document.getElementById('activity-stream');
+  const time = new Date().toISOString().substring(11,19) + ' UTC';
+  const cls = type === 'err' ? 'stream-err' : type === 'warn' ? 'stream-warn' : 'stream-ok';
+  const icon = type === 'err' ? '✗' : type === 'warn' ? '⚠' : '✓';
+  const div = document.createElement('div');
+  div.className = 'stream-entry';
+  div.innerHTML = `<span class="stream-time">${time}</span><span class="${cls}">[${icon}] ${msg}</span>`;
+  stream.insertBefore(div, stream.firstChild);
+  while (stream.children.length > 20) stream.removeChild(stream.lastChild);
+}
+
+function addRotationActivity(msg, type='ok') {
+  const stream = document.getElementById('rotation-stream');
+  const time = new Date().toISOString().substring(11,19) + ' UTC';
+  const cls = type === 'err' ? 'stream-err' : type === 'warn' ? 'stream-warn' : 'stream-ok';
+  const icon = type === 'err' ? '✗' : type === 'warn' ? '▲' : '▶';
+  const div = document.createElement('div');
+  div.className = 'stream-entry';
+  div.innerHTML = `<span class="stream-time">${time}</span><span class="${cls}">${icon} ${msg}</span>`;
+  stream.insertBefore(div, stream.firstChild);
+  while (stream.children.length > 20) stream.removeChild(stream.lastChild);
+}
+
+async function fetchStatus() {
+  try {
+    const r = await fetch('/api/status');
+    const d = await r.json();
+    const caOk = d.ca?.healthy;
+    const bOk = d.service_b?.healthy;
+
+    document.getElementById('dot-ca').className = 'dot' + (caOk ? '' : ' red');
+    document.getElementById('dot-b').className = 'dot' + (bOk ? '' : ' red');
+
+    if (caOk !== caHealthy) {
+      if (!caOk) {
+        addActivity('SPIFFE CA went offline', 'err');
+        addRotationActivity('CA stop requested — run: docker stop spiffe-ca', 'warn');
+      } else {
+        addActivity('SPIFFE CA back online', 'ok');
+        addRotationActivity('CA start requested — run: docker start spiffe-ca', 'ok');
+      }
+      caHealthy = caOk;
+    }
+
+    const healthEl = document.getElementById('ca-health-display');
+    if (healthEl) {
+      healthEl.textContent = caOk ? 'Healthy — issuing SVIDs' : 'OFFLINE — SVIDs cannot be rotated';
+      healthEl.style.color = caOk ? 'var(--green)' : 'var(--red)';
+    }
+  } catch(e) {}
+}
+
+async function fetchLog() {
+  try {
+    const r = await fetch('/api/request-log');
+    logData = await r.json();
+    if (Array.isArray(logData)) {
+      renderLog(logData, 'log-table');
+      renderLog(logData, 'bypass-log-table');
+
+      // Activity feed from log
+      if (logData.length > 0) {
+        const latest = logData[0];
+        if (latest.status === 'OK' && latest.caller_identity) {
+          addActivity(latest.caller_identity, 'ok');
+        }
+      }
+    }
+  } catch(e) {}
+}
+
+async function stopCA() {
+  addRotationActivity('CA stop requested — run: docker stop spiffe-ca', 'warn');
+}
+
+async function startCA() {
+  addRotationActivity('CA start requested — run: docker start spiffe-ca', 'ok');
+}
+
+async function checkCAStatus() {
+  await fetchStatus();
+}
+
+async function launchBypass() {
+  const el = document.getElementById('bypass-response');
+  el.innerHTML = '<span class="json-key">// Sending bypass request...</span>';
+  try {
+    const r = await fetch('/api/bypass/trigger');
+    const d = await r.json();
+    el.innerHTML = `{<br>
+  <span class="json-key">&nbsp;&nbsp;"message"</span>: <span class="json-str">"${d.message || ''}"</span>,<br>
+  <span class="json-key">&nbsp;&nbsp;"caller_identity"</span>: <span class="json-null">null</span>,<br>
+  <span class="json-key">&nbsp;&nbsp;"identity_verified"</span>: <span class="json-bool-false">false</span>,<br>
+  <span class="json-key">&nbsp;&nbsp;"warning"</span>: <span class="json-warn">"${d.warning || 'NO mTLS — sidecar bypass!'}"</span>,<br>
+  <span class="json-key">&nbsp;&nbsp;"timestamp"</span>: <span class="json-str">"${d.timestamp || new Date().toISOString()}"</span><br>
+}`;
+    fetchLog();
+  } catch(e) {
+    el.innerHTML = `<span class="json-key">// Error: ${e.message}</span>`;
+  }
+}
+
+async function loadSVID(svc) {
+  try {
+    const r = await fetch(`/api/svid/service-${svc}`);
+    const d = await r.json();
+    if (d.error) { return; }
+
+    const spiffeId = d.spiffe_id || '';
+    const trustDomain = spiffeId.replace('spiffe://', '').split('/')[0];
+
+    document.getElementById('insp-spiffe-id').textContent = spiffeId;
+    document.getElementById('insp-trust-domain').textContent = trustDomain;
+    document.getElementById('insp-not-before').textContent = d.not_before || '—';
+    document.getElementById('insp-not-after').textContent = d.not_after || '—';
+    document.getElementById('insp-cert-pem').textContent = d.cert_pem || '—';
+
+    inspTTL = d.ttl_remaining || 0;
+    inspTTLMax = d.ttl_seconds || 120;
+    updateTTLBar();
+  } catch(e) {}
+}
+
+function updateTTLBar() {
+  const label = document.getElementById('ttl-label');
+  const fill = document.getElementById('ttl-fill');
+  if (!label || !fill) return;
+  const pct = Math.max(0, Math.min(100, (inspTTL / inspTTLMax) * 100));
+  label.textContent = `-${inspTTL}s / ${inspTTLMax}s`;
+  fill.style.width = pct + '%';
+  fill.className = 'ttl-fill' + (pct < 20 ? ' critical' : pct < 50 ? ' warning' : '');
+  if (inspTTL > 0) inspTTL--;
+}
+
+async function loadEntries() {
+  try {
+    const r = await fetch('/api/registered-entries');
+    const d = await r.json();
+    const tbody = document.getElementById('entries-table');
+    if (Array.isArray(d)) {
+      tbody.innerHTML = d.map(e => `
+        <tr>
+          <td><span class="identity-ok">${e.spiffe_id}</span></td>
+          <td>${e.selector}</td>
+          <td style="color:var(--cyan)">${e.ttl}s</td>
+        </tr>
+      `).join('');
+    }
+  } catch(e) {}
+}
+
+// Polling
+setInterval(fetchStatus, 3000);
+setInterval(fetchLog, 3000);
+setInterval(updateTTLBar, 1000);
+setInterval(() => { if (currentTab === 'inspector') loadSVID('a'); }, 15000);
+
+// Init
+fetchStatus();
+fetchLog();
+loadEntries();
+setTimeout(() => loadSVID('a'), 2000);
+</script>
+</body>
+</html>

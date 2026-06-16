@@ -4,47 +4,46 @@ services:
 
   spiffe_ca:
     build: ./spiffe_ca
-    container_name: spiffe_ca
+    container_name: spiffe-ca
     networks:
       - spiffe_net
-    volumes:
-      - ca_certs:/certs
+    environment:
+      - SVID_TTL=120
+      - TRUST_DOMAIN=demo.spiffe.io
+    ports:
+      - "8081:8081"
     healthcheck:
-      test: ["CMD", "python", "-c", "import os; assert os.path.exists('/certs/ca.crt')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
       interval: 5s
       timeout: 3s
       retries: 10
 
-  service_a:
-    build: ./service_a
-    container_name: service_a
-    networks:
-      - spiffe_net
-    volumes:
-      - ca_certs:/certs:ro
-    depends_on:
-      spiffe_ca:
-        condition: service_healthy
-    environment:
-      - SPIFFE_ID=spiffe://prod.example.org/service-a
-      - CA_CERT=/certs/ca.crt
-      - SERVICE_B_URL=https://service_b:8443
-
   service_b:
     build: ./service_b
-    container_name: service_b
+    container_name: service-b
     networks:
       - spiffe_net
-    volumes:
-      - ca_certs:/certs:ro
     depends_on:
       spiffe_ca:
         condition: service_healthy
     environment:
-      - SPIFFE_ID=spiffe://prod.example.org/service-b
-      - CA_CERT=/certs/ca.crt
+      - CA_URL=http://spiffe_ca:8081
+      - SPIFFE_ID=spiffe://demo.spiffe.io/service-b
     ports:
+      - "8080:8080"
       - "8443:8443"
+
+  service_a:
+    build: ./service_a
+    container_name: service-a
+    networks:
+      - spiffe_net
+    depends_on:
+      - service_b
+    environment:
+      - CA_URL=http://spiffe_ca:8081
+      - SPIFFE_ID=spiffe://demo.spiffe.io/service-a
+      - SERVICE_B_HOST=service_b
 
   dashboard:
     build: ./dashboard
@@ -57,12 +56,10 @@ services:
     ports:
       - "7000:7000"
     environment:
+      - CA_URL=http://spiffe_ca:8081
       - SERVICE_A_URL=http://service_a:8080
       - SERVICE_B_URL=http://service_b:8080
 
 networks:
   spiffe_net:
     driver: bridge
-
-volumes:
-  ca_certs:
