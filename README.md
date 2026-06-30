@@ -210,4 +210,4 @@ The simulation environment was built from scratch using Python's `cryptography` 
 
 ---
 
-*Built by Kundan & Rutuj as part of master's-level security research.*
+*Built by Kundan as part of master's-level security research.*
